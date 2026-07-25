@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/emaillog/db" VERSION="20260725" COMMENT="Database definition for the email log plugin."
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="local_emaillog" COMMENT="One record per outgoing email observed by the plugin.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="useridfrom" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Sender user ID, NULL for the no-reply and support pseudo users."/>
+        <FIELD NAME="emailfrom" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Sender email address."/>
+        <FIELD NAME="useridto" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Recipient user ID, NULL when not a real user."/>
+        <FIELD NAME="emailto" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Recipient email address, after applying the messaging email override."/>
+        <FIELD NAME="subject" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Email subject."/>
+        <FIELD NAME="bodytext" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Plain text body."/>
+        <FIELD NAME="bodyhtml" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="HTML body, if any."/>
+        <FIELD NAME="replyto" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Reply-To address, if any."/>
+        <FIELD NAME="attachments" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Comma separated names of the attached files."/>
+        <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 unknown, 1 sent, 2 failed."/>
+        <FIELD NAME="component" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="Frankenstyle component and message provider that triggered the email."/>
+        <FIELD NAME="errorinfo" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Mailer error reported by core\event\email_failed."/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Time the record was created."/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated" COMMENT="Used by the listing default sort order and by the cleanup task."/>
+        <INDEX NAME="useridfrom" UNIQUE="false" FIELDS="useridfrom"/>
+        <INDEX NAME="useridto" UNIQUE="false" FIELDS="useridto"/>
+        <INDEX NAME="emailto" UNIQUE="false" FIELDS="emailto"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

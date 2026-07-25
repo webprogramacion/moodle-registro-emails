@@ -22,9 +22,22 @@ Moodle 5.x incorpora el sistema de hooks (`\core\hook\*`) que reemplaza a los ca
 
 1. **Tipo de plugin: `local`** — Se necesita interceptar un evento global del sistema y añadir páginas de administración; un plugin `local` es el tipo canónico para esto. Alternativa descartada: `report` (serviría para el visor, pero no es apropiado como contenedor del hook y la tarea; un único plugin `local` con el informe dentro simplifica instalación y mantenimiento).
 
-2. **Captura vía hooks de Moodle 5.x** — Se usan los hooks del core `\core\hook\email\before_email_send` y `\core\hook\email\after_email_send` (nombres a verificar contra la versión exacta del core en la implementación) registrados en `db/hooks.php`. `before` captura los datos del mensaje (PHPMailer ya montado: from, to, subject, body, altbody, reply-to, attachments); `after` (si está disponible) actualiza el estado enviado/fallido. Si el hook posterior no existe en la versión objetivo, el estado se guarda como "desconocido" y se documenta. Alternativa descartada: parchear `email_to_user()` o usar un `$CFG->noemailever` + wrapper — invasivo y frágil ante actualizaciones.
+2. **Captura vía callback de la Message API + observer de `email_failed`** — *Decisión revisada durante la implementación (tarea 2.1).*
 
-3. **Tabla propia `local_emaillog`** — Campos: `id`, `useridfrom` (INT, NULL), `emailfrom` (CHAR 255), `useridto` (INT, NULL), `emailto` (CHAR 255), `subject` (TEXT), `bodytext` (TEXT grande), `bodyhtml` (TEXT grande, NULL), `replyto` (CHAR 255, NULL), `attachments` (TEXT, NULL — nombres separados por coma o JSON), `status` (TINYINT: 0 desconocido, 1 enviado, 2 fallido), `component` (CHAR 100, NULL), `timecreated` (INT). Índices en `timecreated`, `useridto`, `useridfrom` y `emailto` para los filtros y la purga. Alternativa descartada: reutilizar los logstores de Moodle — no admiten cuerpos grandes ni consultas cómodas por email.
+   **Hallazgo verificado contra el código fuente del core (ramas `MOODLE_500_STABLE`, `MOODLE_501_STABLE`, `MOODLE_502_STABLE`):** los hooks `\core\hook\email\before_email_send` / `after_email_send` **no existen en ninguna versión 5.x**. `lib/classes/hook/` solo contiene `access/`, `navigation/`, `output/`, `task/`, `after_config.php` y `di_configuration.php`. La función `email_to_user()` (en `lib/moodlelib.php` en 5.0, `public/lib/moodlelib.php` en 5.1+) **no despacha ningún hook**: su único punto de extensión es el evento `\core\event\email_failed`, disparado exclusivamente cuando `$mail->send()` devuelve `false`. Además `get_mailer()` instancia `moodle_phpmailer` con una ruta fija (`require_once($CFG->libdir.'/phpmailer/moodle_phpmailer.php')`) y no está en el contenedor de DI, por lo que el mailer no es sustituible.
+
+   En consecuencia se usan los dos únicos puntos de extensión reales:
+
+   - **`local_emaillog_pre_processor_message_send($processorname, $eventdata)`** en `lib.php`. El core lo invoca en `lib/classes/message/manager.php::call_processors()` mediante `get_plugins_with_function('pre_processor_message_send')`, una vez por cada procesador de salida. Filtrando `$processorname === 'email'` se captura todo lo que Moodle envía por correo a través de `message_send()` (foros, tareas, insignias, calendario, mensajes privados, etc.). El registro se inserta con estado "desconocido" porque el callback se ejecuta *antes* del envío.
+   - **Observer de `\core\event\email_failed`** en `db/events.php`. Captura *cualquier* envío fallido, incluidos los de llamadas directas a `email_to_user()`. Si encuentra un registro reciente pendiente que corresponda al mismo destinatario y asunto, le cambia el estado a "fallido" y le añade el `errorinfo`; si no lo encuentra (envío directo), inserta un registro nuevo con estado "fallido".
+
+   **Limitación conocida y documentada:** las llamadas directas a `email_to_user()` que **tienen éxito** no se registran, porque el core no expone nada en ese camino. Esto afecta principalmente al restablecimiento de contraseña, la confirmación de alta de usuario y el formulario de soporte. Sus **fallos** sí quedan registrados vía `email_failed`.
+
+   Alternativas descartadas: parchear `email_to_user()` en el core (rompe el non-goal de no modificar el core; queda como parche opcional documentado si en el futuro se necesita cobertura total) y limitar el plugin a auditar solo fallos (reduciría demasiado el alcance del proposal).
+
+3. **Tabla propia `local_emaillog`** — Campos: `id`, `useridfrom` (INT, NULL), `emailfrom` (CHAR 255), `useridto` (INT, NULL), `emailto` (CHAR 255), `subject` (TEXT), `bodytext` (TEXT grande), `bodyhtml` (TEXT grande, NULL), `replyto` (CHAR 255, NULL), `attachments` (TEXT, NULL — nombres separados por coma o JSON), `status` (TINYINT: 0 desconocido, 1 enviado, 2 fallido), `component` (CHAR 100, NULL), `errorinfo` (TEXT, NULL — añadido durante la implementación para guardar el `errorinfo` de `\core\event\email_failed`), `timecreated` (INT). Índices en `timecreated`, `useridto`, `useridfrom` y `emailto` para los filtros y la purga. Alternativa descartada: reutilizar los logstores de Moodle — no admiten cuerpos grandes ni consultas cómodas por email.
+
+   El campo `subject` es de tipo `text`, por lo que la columna del listado **no es ordenable** (evita el problema de ordenar por columnas TEXT en algunos motores) y los filtros sobre él usan `sql_compare_text()` + `sql_like()`.
 
 4. **Visor con `table_sql` + formulario de filtros con `moodleform`** — Página `index.php` (listado con paginación/orden servidor) y `view.php` (detalle). Se registra como `admin_externalpage` bajo la categoría de informes para que aparezca en Administración del sitio → Informes. El HTML del cuerpo se muestra con `format_text(..., FORMAT_HTML)` para que pase por el purificador. Alternativa descartada: report builder API — más potente pero innecesariamente complejo para v1.
 
@@ -37,15 +50,17 @@ Moodle 5.x incorpora el sistema de hooks (`\core\hook\*`) que reemplaza a los ca
    local/emaillog/
    ├── version.php
    ├── settings.php
+   ├── lib.php              (callback pre_processor_message_send)
    ├── index.php            (listado)
    ├── view.php             (detalle)
    ├── db/
    │   ├── install.xml
-   │   ├── hooks.php
+   │   ├── events.php       (observer de \core\event\email_failed)
    │   ├── tasks.php
    │   └── access.php
    ├── classes/
-   │   ├── hook_callbacks.php
+   │   ├── observer.php
+   │   ├── local/logger.php
    │   ├── table/emaillog_table.php
    │   ├── form/filter_form.php
    │   ├── task/cleanup.php
@@ -55,9 +70,14 @@ Moodle 5.x incorpora el sistema de hooks (`\core\hook\*`) que reemplaza a los ca
        └── es/local_emaillog.php
    ```
 
+   `db/hooks.php` y `classes/hook_callbacks.php` desaparecen del diseño: no hay hooks de email a los que suscribirse (ver decisión 2).
+
 ## Risks / Trade-offs
 
-- [Los nombres exactos de los hooks de email varían entre 4.4/5.x] → Verificar en `lib/classes/hook/` del core objetivo al implementar; si solo existe el hook previo, el estado post-envío queda "desconocido".
+- [No existen hooks de email en el core 5.x] → Verificado y resuelto en la decisión 2: callback `pre_processor_message_send` + observer de `email_failed`. Coste: los envíos directos con éxito vía `email_to_user()` (restablecer contraseña, confirmación de alta) no se registran.
+- [El callback `pre_processor_message_send` es un callback legacy de `lib.php`] → Sigue vigente en 5.2 (`get_plugins_with_function('pre_processor_message_send')` se invoca sin el flag `$migratedtohook`, es decir, no está marcado como deprecado). Si en el futuro se migra a hook, habrá que cambiar `lib.php` por `db/hooks.php`.
+- [El estado por defecto es "desconocido"] → El callback se ejecuta antes del envío y el core no notifica el éxito. Solo el fallo es observable, así que "desconocido" significa en la práctica "no se detectó ningún fallo".
+- [Los mensajes de conversaciones de grupo se envían en diferido] → El procesador `message_email` acumula los mensajes de grupo en `message_email_messages` y los envía después con una tarea; el registro se crea en el momento de la llamada, no en el del envío real.
 - [La tabla puede crecer mucho en sitios con alto volumen de correo] → Índice en `timecreated` + purga diaria; el default de 6 meses evita crecimiento indefinido salvo elección explícita de "de por vida".
 - [El contenido de los emails contiene datos personales sensibles] → Capacidad restringida a managers, Privacy API implementada, y la retención configurable permite políticas de minimización.
 - [Emails masivos (foros con miles de suscriptores) generan miles de inserciones] → Una inserción simple por email es barata; si fuera problema, se podría batchear en una mejora futura.
@@ -65,11 +85,12 @@ Moodle 5.x incorpora el sistema de hooks (`\core\hook\*`) que reemplaza a los ca
 
 ## Migration Plan
 
-1. Instalar el plugin copiando `local/emaillog/` y visitando la página de notificaciones (crea la tabla vía `install.xml`).
+1. Instalar el plugin copiando `local/emaillog/` en el directorio `local/` del sitio (en Moodle 5.1+ el core vive bajo `public/`, por lo que la ruta es `public/local/emaillog/`) y visitando la página de notificaciones (crea la tabla vía `install.xml`).
 2. Configurar la retención deseada (default 6 meses).
 3. Rollback: desinstalar el plugin desde la administración; Moodle elimina la tabla y los ajustes. No toca datos del core.
 
 ## Open Questions
 
-- ¿Debe registrarse también el email de "soporte" saliente vía `email_to_user` con usuario ficticio (p. ej. invitados)? Decisión tomada: sí, guardando userid nulo/0 (cubierto en specs).
-- Confirmar durante la implementación el nombre/firma exacta de los hooks de email en la rama de Moodle 5.x objetivo.
+- ¿Debe registrarse también el email de "soporte" saliente vía `email_to_user` con usuario ficticio (p. ej. invitados)? Decisión tomada: sí, guardando userid nulo/0 (cubierto en specs). Nota: los usuarios ficticios del core (`core_user::get_noreply_user()`, `get_support_user()`) tienen id negativo (-10, -20), que se normaliza a `NULL`.
+- ~~Confirmar durante la implementación el nombre/firma exacta de los hooks de email en la rama de Moodle 5.x objetivo.~~ **Resuelto:** no existen hooks de email en 5.0/5.1/5.2 (ver decisión 2).
+- Versión mínima soportada: Moodle 5.0 (`$plugin->requires = 2025041400`), verificado compatible con 5.0, 5.1 y 5.2.

@@ -2,12 +2,18 @@
 
 ## ADDED Requirements
 
-### Requirement: Registro de todos los emails salientes
-El plugin SHALL interceptar todo email enviado a través de la función `email_to_user()` de Moodle (mediante el hook `\core\hook\email_send` de Moodle 5.x) y SHALL crear un registro en la tabla `local_emaillog` sin impedir ni alterar el envío del email.
+### Requirement: Registro de los emails salientes de la Message API
+El plugin SHALL interceptar todo email que Moodle envíe a través de la Message API (`message_send()` con el procesador de salida `email`), mediante el callback `pre_processor_message_send`, y SHALL crear un registro en la tabla `local_emaillog` sin impedir ni alterar el envío del email.
 
-#### Scenario: Email enviado correctamente
-- **WHEN** Moodle envía un email a un usuario (notificación de foro, mensaje del sistema, restablecimiento de contraseña, etc.)
+Moodle 5.x no expone ningún punto de extensión en el camino de éxito de `email_to_user()`, por lo que los emails enviados con llamadas directas a esa función que se completan correctamente NO se registran. Sus fallos SÍ se registran (ver el requisito de estado del envío). Esta limitación SHALL documentarse en la interfaz de administración y en el README.
+
+#### Scenario: Notificación enviada correctamente
+- **WHEN** Moodle envía por email una notificación a un usuario (mensaje de foro, entrega de tarea, insignia, aviso de calendario, mensaje privado)
 - **THEN** se crea un registro en `local_emaillog` con los datos del email y el envío se completa con normalidad
+
+#### Scenario: Email directo con éxito
+- **WHEN** Moodle envía un email con una llamada directa a `email_to_user()` que se completa correctamente (p. ej. restablecimiento de contraseña)
+- **THEN** no se crea ningún registro, y la interfaz advierte al administrador de que ese canal no se puede auditar en Moodle 5.x
 
 #### Scenario: Fallo al guardar el registro
 - **WHEN** la inserción del registro en base de datos falla por cualquier motivo
@@ -29,11 +35,19 @@ Cada registro SHALL almacenar: email y userid del remitente, email y userid del 
 - **THEN** el registro guarda el email del remitente y userid 0 o nulo
 
 ### Requirement: Registro del estado del envío
-El registro SHALL reflejar el resultado del envío (enviado o fallido) cuando Moodle proporcione esa información a través del hook posterior al envío; si no es determinable, el estado SHALL quedar como "desconocido".
+El plugin SHALL observar el evento `\core\event\email_failed` y SHALL marcar como "fallido" el registro correspondiente, guardando el mensaje de error devuelto por el mailer. Si el evento corresponde a un email que no está en la tabla (envío directo vía `email_to_user()`), el plugin SHALL crear un registro nuevo con estado "fallido". Los registros para los que no se observa ningún fallo SHALL quedar con estado "desconocido", ya que Moodle 5.x no notifica los envíos correctos.
 
-#### Scenario: Envío fallido por SMTP
-- **WHEN** el servidor SMTP rechaza el mensaje y Moodle reporta el fallo
-- **THEN** el registro correspondiente marca el estado como fallido
+#### Scenario: Envío fallido por SMTP de una notificación
+- **WHEN** el servidor SMTP rechaza una notificación ya registrada y Moodle dispara `\core\event\email_failed`
+- **THEN** el registro existente pasa a estado fallido y guarda el error del mailer
+
+#### Scenario: Envío directo fallido
+- **WHEN** falla una llamada directa a `email_to_user()` que no tiene registro previo (p. ej. restablecimiento de contraseña)
+- **THEN** se crea un registro nuevo con estado fallido, remitente, destinatario, asunto, cuerpo de texto y el error del mailer
+
+#### Scenario: Envío sin fallos observados
+- **WHEN** una notificación se registra y no se dispara ningún evento de fallo
+- **THEN** el registro queda con estado "desconocido", que la interfaz explica como "no se detectó ningún fallo"
 
 ### Requirement: Cumplimiento de la Privacy API
 El plugin SHALL implementar el privacy provider de Moodle declarando la tabla `local_emaillog` como almacén de datos personales, y SHALL soportar exportación y borrado de los registros vinculados a un usuario.

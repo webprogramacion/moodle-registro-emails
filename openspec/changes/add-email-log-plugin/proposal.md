@@ -6,8 +6,8 @@ Moodle no ofrece de serie una forma de auditar los correos que envía la platafo
 
 ## What Changes
 
-- Nuevo plugin local `local_emaillog` (tipo `local`, compatible con Moodle 5.x) que intercepta todo email saliente mediante el hook `\core\hook\email_send` (o callback `before_email_send` como respaldo) y lo guarda en una tabla propia.
-- Cada registro guarda: remitente (email y userid), destinatario (email y userid), fecha/hora (timestamp), asunto, contenido (texto y HTML), Reply-To, adjuntos (nombres), estado del envío (enviado/fallido), IP del servidor y componente/origen de Moodle que disparó el envío cuando sea determinable.
+- Nuevo plugin local `local_emaillog` (tipo `local`, compatible con Moodle 5.0/5.1/5.2) que intercepta los emails salientes mediante el callback `pre_processor_message_send` de la Message API y el observer del evento `\core\event\email_failed`, y los guarda en una tabla propia. (Se comprobó durante la implementación que los hooks de email `\core\hook\email\*` no existen en ninguna versión 5.x; ver `design.md`, decisión 2.)
+- Cada registro guarda: remitente (email y userid), destinatario (email y userid), fecha/hora (timestamp), asunto, contenido (texto y HTML), Reply-To, adjuntos (nombres), estado del envío (desconocido/fallido), error del mailer y componente/origen de Moodle que disparó el envío cuando sea determinable.
 - Nueva página de administración (Administración del sitio → Informes) con listado paginado, filtros (rango de fechas, destinatario, remitente, asunto, estado) y vista de detalle de cada email.
 - Página de configuración con la política de retención: 30 días, 90 días, 6 meses, 1 año o "de por vida" (sin borrado).
 - Tarea programada (scheduled task) que purga diariamente los registros más antiguos que el periodo de retención configurado.
@@ -29,7 +29,8 @@ Moodle no ofrece de serie una forma de auditar los correos que envía la platafo
 
 - Código nuevo autocontenido en `local/emaillog/` (no se modifica el core de Moodle).
 - Base de datos: nueva tabla `local_emaillog` (definida en `db/install.xml`).
-- Hooks: suscripción al hook de envío de email del core (`db/hooks.php`).
+- Captura: callback `local_emaillog_pre_processor_message_send()` en `lib.php` y observer de `\core\event\email_failed` en `db/events.php`.
+- Limitación: los emails enviados con llamadas directas a `email_to_user()` que se completan con éxito (restablecer contraseña, confirmación de alta, formulario de soporte) no se registran, porque Moodle 5.x no expone ningún punto de extensión en ese camino; sus fallos sí se registran.
 - Tareas: nueva scheduled task registrada en `db/tasks.php`.
 - Administración: nuevas entradas en `settings.php` (configuración + enlace al informe).
 - Privacidad: provider de la Privacy API; el contenido de los emails puede incluir datos personales, la retención configurable mitiga el riesgo.
