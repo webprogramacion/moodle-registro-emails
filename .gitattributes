@@ -1,0 +1,19 @@
+# Lo que NO viaja dentro del ZIP de instalación.
+#
+# `git archive --prefix=emaillog/` respeta export-ignore, así que esta lista es la que
+# define el contenido del ZIP de una release: todo lo versionado que no esté marcado aquí
+# acaba dentro del plugin instalado. Al añadir material de desarrollo nuevo al repositorio,
+# añádelo también a esta lista.
+/.github         export-ignore
+/.gitattributes  export-ignore
+/.gitignore      export-ignore
+/openspec        export-ignore
+/.claude         export-ignore
+/.agent          export-ignore
+/.codex          export-ignore
+
+# Normalización de finales de línea.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary

@@ -1,0 +1,129 @@
+name: Release
+
+# Se dispara al empujar un tag de versión: git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Necesario para que gh release create pueda publicar.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Construir el ZIP y publicar la release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Leer la versión de version.php
+        id: plugin
+        run: |
+          set -euo pipefail
+          version=$(grep -oP '\$plugin->version\s*=\s*\K[0-9]+' version.php)
+          release=$(grep -oP "\\\$plugin->release\s*=\s*'\K[^']+" version.php)
+          maturity=$(grep -oP '\$plugin->maturity\s*=\s*\K\w+' version.php)
+
+          if [ -z "$version" ] || [ -z "$release" ]; then
+            echo "::error::No se ha podido leer \$plugin->version o \$plugin->release de version.php"
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "release=$release"
+            echo "maturity=$maturity"
+            echo "zipname=local_emaillog_${version}.zip"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "version.php declara release $release (version $version, $maturity)"
+
+      - name: Comprobar que el tag coincide con version.php
+        run: |
+          set -euo pipefail
+          expected="v${{ steps.plugin.outputs.release }}"
+
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::El tag es $GITHUB_REF_NAME pero version.php declara release ${{ steps.plugin.outputs.release }}, que corresponde al tag $expected."
+            echo "::error::Corrige \$plugin->release en version.php o vuelve a etiquetar. No se publica nada."
+            exit 1
+          fi
+
+          echo "El tag $GITHUB_REF_NAME coincide con version.php."
+
+      - name: Construir el ZIP de instalación
+        run: |
+          set -euo pipefail
+          # git archive con --prefix produce exactamente lo que exige el validador de Moodle:
+          # un único directorio raíz llamado emaillog/. Las rutas marcadas con export-ignore
+          # en .gitattributes (openspec/, .github/, configuración de agentes) quedan fuera,
+          # y al construirse desde el tag el ZIP es reproducible y nunca arrastra ficheros
+          # sin versionar como .DS_Store.
+          git archive --format=zip --prefix=emaillog/ \
+            -o "${{ steps.plugin.outputs.zipname }}" "$GITHUB_REF_NAME"
+
+      - name: Verificar la estructura del ZIP
+        run: |
+          set -euo pipefail
+          zip="${{ steps.plugin.outputs.zipname }}"
+
+          unzip -l "$zip"
+
+          # Un único directorio raíz, y que sea emaillog.
+          roots=$(unzip -Z1 "$zip" | cut -d/ -f1 | sort -u)
+          if [ "$roots" != "emaillog" ]; then
+            echo "::error::El ZIP debe tener un único directorio raíz llamado emaillog. Encontrado: $roots"
+            exit 1
+          fi
+
+          # Moodle exige version.php en la raíz del directorio del plugin.
+          if ! unzip -Z1 "$zip" | grep -qx 'emaillog/version.php'; then
+            echo "::error::Falta emaillog/version.php en el ZIP"
+            exit 1
+          fi
+
+          # Nada de material de desarrollo ni basura del sistema de ficheros.
+          if unzip -Z1 "$zip" | grep -E '^emaillog/(openspec|\.github|\.claude|\.agent|\.codex)/|__MACOSX|\.DS_Store'; then
+            echo "::error::El ZIP contiene ficheros que deberían estar excluidos por .gitattributes"
+            exit 1
+          fi
+
+          echo "Estructura del ZIP correcta."
+
+      - name: Redactar las notas de la release
+        run: |
+          set -euo pipefail
+          # Se pasan con --notes (no con --notes-file): gh solo documenta anteponer notas
+          # propias a las autogeneradas a través de esa opción.
+          cat > release-notes.md <<'NOTES'
+          ## Instalación
+
+          Descarga el ZIP adjunto e instálalo desde **Administración del sitio → Extensiones →
+          Instalar módulos externos**, eligiendo el tipo **Plugin local (local)**.
+
+          También puedes descomprimirlo a mano en `<moodleroot>/local/emaillog` (Moodle 5.0) o
+          en `<moodleroot>/public/local/emaillog` (Moodle 5.1 y 5.2), y visitar después la
+          página de notificaciones.
+
+          El ZIP contiene un único directorio raíz `emaillog/`, tal y como exige el validador
+          de Moodle.
+          NOTES
+
+      - name: Publicar la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          prerelease=""
+          # Un plugin ALPHA o BETA se publica como prerelease para que nadie lo tome por estable.
+          case "${{ steps.plugin.outputs.maturity }}" in
+            MATURITY_ALPHA|MATURITY_BETA) prerelease="--prerelease" ;;
+          esac
+
+          gh release create "$GITHUB_REF_NAME" "${{ steps.plugin.outputs.zipname }}" \
+            --title "${{ steps.plugin.outputs.release }}" \
+            --notes "$(cat release-notes.md)" \
+            --generate-notes $prerelease

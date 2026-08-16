@@ -1,0 +1,26 @@
+# macOS.
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows.
+Thumbs.db
+Desktop.ini
+
+# Editores e IDE.
+.idea/
+.vscode/
+*.swp
+*~
+
+# Artefactos de empaquetado. El ZIP de una release lo construye
+# .github/workflows/release.yml; nunca debe commitearse.
+*.zip
+
+# Herramientas de desarrollo (moodle-plugin-ci, Composer, npm).
+/moodle/
+/moodledata/
+/vendor/
+/node_modules/
+.phpunit.result.cache
