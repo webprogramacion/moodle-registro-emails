@@ -61,11 +61,13 @@ $string['bodyhtml'] = 'Contenido HTML';
 $string['bodytext'] = 'Contenido en texto plano';
 $string['component'] = 'Origen';
 $string['detailtitle'] = 'Detalle del email';
+$string['editprofilelink'] = 'Editar el perfil de {$a} (se abre en una ventana nueva)';
 $string['errorinfo'] = 'Error del mailer';
 $string['noresults'] = 'Ningún email coincide con los filtros aplicados.';
 $string['notrecorded'] = 'No registrado';
 $string['replyto'] = 'Reply-To';
 $string['viewdetail'] = 'Ver detalle';
+$string['viewprofilelink'] = 'Ver el perfil de {$a} (se abre en una ventana nueva)';
 
 // Aviso de cobertura.
 $string['coveragenotice'] = 'Este registro guarda los emails que Moodle envía a través del sistema de mensajería (notificaciones de foro, tareas, insignias, eventos de calendario, mensajes privados). Moodle 5.x no ofrece ninguna forma de observar las llamadas directas a <code>email_to_user()</code> que tienen éxito, por lo que los emails de restablecimiento de contraseña, confirmación de alta y formulario de soporte solo se registran cuando fallan.';

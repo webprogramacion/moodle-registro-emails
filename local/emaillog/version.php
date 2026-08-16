@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_emaillog';
-$plugin->version = 2026072500;
+$plugin->version = 2026081600;
 $plugin->requires = 2025041400; // Moodle 5.0. Tested against 5.0, 5.1 and 5.2.
 $plugin->maturity = MATURITY_ALPHA;
-$plugin->release = '0.1.0';
+$plugin->release = '0.2.0';

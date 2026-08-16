@@ -61,11 +61,13 @@ $string['bodyhtml'] = 'HTML content';
 $string['bodytext'] = 'Plain text content';
 $string['component'] = 'Origin';
 $string['detailtitle'] = 'Email detail';
+$string['editprofilelink'] = 'Edit the profile of {$a} (opens in a new window)';
 $string['errorinfo'] = 'Mailer error';
 $string['noresults'] = 'No emails match the filters applied.';
 $string['notrecorded'] = 'Not recorded';
 $string['replyto'] = 'Reply-To';
 $string['viewdetail'] = 'View detail';
+$string['viewprofilelink'] = 'View the profile of {$a} (opens in a new window)';
 
 // Coverage notice.
 $string['coveragenotice'] = 'This log records the emails Moodle sends through the messaging system (forum notifications, assignment feedback, badges, calendar events, private messages). Moodle 5.x does not offer any way to observe successful direct calls to <code>email_to_user()</code>, so password reset, signup confirmation and support form emails are only recorded when they fail.';

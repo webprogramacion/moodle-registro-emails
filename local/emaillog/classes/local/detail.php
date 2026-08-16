@@ -90,7 +90,12 @@ class detail {
     }
 
     /**
-     * Describe a sender or recipient, linking to the profile when the user still exists.
+     * Describe a sender or recipient, linking the name when the user still exists.
+     *
+     * The link points at the profile edit form for anyone who may edit users, so that a
+     * wrong address can be corrected from here; everybody else keeps the read-only profile
+     * link this page has always offered. Where to link is decided by userlink, so that this
+     * page and the listing cannot drift apart.
      *
      * @param int|null $userid Stored user ID.
      * @param string|null $email Stored address.
@@ -108,13 +113,12 @@ class detail {
             return $address;
         }
 
-        $name = s(fullname($user));
-        if (empty($user->deleted)) {
-            $name = \html_writer::link(
-                new \moodle_url('/user/profile.php', ['id' => $user->id]),
-                $name
-            );
-        }
+        $name = userlink::render(
+            (int) $user->id,
+            fullname($user),
+            !empty($user->deleted),
+            new \moodle_url('/user/profile.php', ['id' => $user->id])
+        );
 
         return $name . ' ' . \html_writer::tag('small', '&lt;' . $address . '&gt;', ['class' => 'text-muted']);
     }

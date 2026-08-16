@@ -17,6 +17,7 @@
 namespace local_emaillog\table;
 
 use local_emaillog\local\logger;
+use local_emaillog\local\userlink;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -84,7 +85,9 @@ class emaillog_table extends \table_sql {
                 el.subject AS subject,
                 el.status AS status,
                 {$fromname} AS fromname,
-                {$toname} AS toname";
+                {$toname} AS toname,
+                uf.deleted AS fromdeleted,
+                ut.deleted AS todeleted";
     }
 
     /**
@@ -185,7 +188,12 @@ class emaillog_table extends \table_sql {
      * @return string
      */
     public function col_emailfrom($row): string {
-        return self::format_participant($row->emailfrom, $row->fromname);
+        return self::format_participant(
+            $row->emailfrom,
+            $row->fromname,
+            $row->useridfrom,
+            !empty($row->fromdeleted)
+        );
     }
 
     /**
@@ -195,7 +203,12 @@ class emaillog_table extends \table_sql {
      * @return string
      */
     public function col_emailto($row): string {
-        return self::format_participant($row->emailto, $row->toname);
+        return self::format_participant(
+            $row->emailto,
+            $row->toname,
+            $row->useridto,
+            !empty($row->todeleted)
+        );
     }
 
     /**
@@ -239,11 +252,23 @@ class emaillog_table extends \table_sql {
     /**
      * Render an address together with the user's name when there is one.
      *
+     * The name links to the profile edit form when the viewer may edit users: a failed
+     * delivery is usually a mistyped address, and this is the shortest path to fixing it.
+     * The listing has never linked names, so when the viewer cannot edit users the name
+     * stays plain text rather than gaining a read-only profile link nobody asked for.
+     *
      * @param string|null $email Email address.
      * @param string|null $name Full name coming from the joined user record.
+     * @param int|null $userid Stored user ID, empty for the noreply and support pseudo users.
+     * @param bool $deleted Whether the joined user is flagged as deleted.
      * @return string
      */
-    protected static function format_participant(?string $email, ?string $name): string {
+    protected static function format_participant(
+        ?string $email,
+        ?string $name,
+        ?int $userid = null,
+        bool $deleted = false
+    ): string {
         $email = (string) $email;
         $name = trim((string) $name);
 
@@ -251,7 +276,7 @@ class emaillog_table extends \table_sql {
             return s($email);
         }
 
-        return s($name) . \html_writer::empty_tag('br') .
+        return userlink::render($userid, $name, $deleted) . \html_writer::empty_tag('br') .
             \html_writer::tag('small', s($email));
     }
 }
